@@ -9,9 +9,6 @@ from flask import Flask, request, jsonify
 import asyncio
 import threading
 
-# تحميل المتغيرات البيئية
-load_dotenv()
-
 # إعداد التسجيل
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -19,12 +16,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# تحميل المتغيرات البيئية فقط إذا لم تكن في بيئة Render
+if os.getenv("RENDER") != "true":
+    load_dotenv()
+
 # إعداد Supabase
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_KEY")
 
+logger.info(f"SUPABASE_URL: {supabase_url}")
+logger.info(f"SUPABASE_KEY: {supabase_key}")
+
 # تحقق من وجود المتغيرات البيئية
 if not supabase_url or not supabase_key:
+    logger.error("SUPABASE_URL أو SUPABASE_KEY غير موجود في متغيرات البيئة.")
     raise ValueError("SUPABASE_URL أو SUPABASE_KEY غير موجود في متغيرات البيئة")
 
 supabase = create_client(supabase_url, supabase_key)
