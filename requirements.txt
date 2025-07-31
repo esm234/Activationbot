@@ -1,0 +1,6 @@
+python-telegram-bot
+supabase
+python-dotenv
+flask
+flask-cors
+
