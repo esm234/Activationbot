@@ -3,7 +3,7 @@ import logging
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-from supabase import create_client, Client
+from supabase import create_client
 from datetime import datetime
 from flask import Flask, request, jsonify
 import asyncio
@@ -14,25 +14,30 @@ load_dotenv()
 
 # إعداد التسجيل
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
 # إعداد Supabase
-supabase_url = os.getenv('SUPABASE_URL')
-supabase_key = os.getenv('SUPABASE_KEY')
-supabase: Client = create_client(supabase_url, supabase_key)
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+
+# تحقق من وجود المتغيرات البيئية
+if not supabase_url or not supabase_key:
+    raise ValueError("SUPABASE_URL أو SUPABASE_KEY غير موجود في متغيرات البيئة")
+
+supabase = create_client(supabase_url, supabase_key)
 
 # معرف الأدمن
-ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', '0'))
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 
 # إعداد Flask
 app = Flask(__name__)
 
 class TelegramBot:
     def __init__(self):
-        self.bot_token = os.getenv('BOT_TOKEN')
+        self.bot_token = os.getenv("BOT_TOKEN")
         if not self.bot_token:
             raise ValueError("BOT_TOKEN غير موجود في متغيرات البيئة")
         self.application = None
@@ -43,14 +48,14 @@ class TelegramBot:
         
         # التحقق من وجود المستخدم في قاعدة البيانات
         try:
-            response = supabase.table('users').select('*').eq('telegram_id', user.id).execute()
+            response = supabase.table("users").select("*").eq("telegram_id", user.id).execute()
             
             if response.data:
                 # المستخدم موجود، التحقق من حالة التفعيل
-                user_id = response.data[0]['id']
-                activation_response = supabase.table('user_activations').select('*').eq('user_id', user_id).execute()
+                user_id = response.data[0]["id"]
+                activation_response = supabase.table("user_activations").select("*").eq("user_id", user_id).execute()
                 
-                if activation_response.data and activation_response.data[0]['is_active']:
+                if activation_response.data and activation_response.data[0]["is_active"]:
                     await update.message.reply_text(
                         f"مرحباً {user.first_name}! 🎉\n"
                         "حسابك مفعل بالفعل ويمكنك الوصول إلى الاختبارات."
@@ -122,9 +127,9 @@ class TelegramBot:
         """عرض المستخدمين غير المفعلين"""
         try:
             # جلب المستخدمين غير المفعلين
-            response = supabase.table('users').select(
-                'id, telegram_id, username, created_at, user_activations(is_active)'
-            ).eq('user_activations.is_active', False).execute()
+            response = supabase.table("users").select(
+                "id, telegram_id, username, created_at, user_activations(is_active)"
+            ).eq("user_activations.is_active", False).execute()
             
             if not response.data:
                 await query.edit_message_text("لا يوجد مستخدمين غير مفعلين.")
@@ -134,14 +139,14 @@ class TelegramBot:
             keyboard = []
             
             for user in response.data:
-                message += f"🔸 {user['username'] or 'غير محدد'}\n"
-                message += f"   ID: {user['telegram_id']}\n"
-                message += f"   تاريخ التسجيل: {user['created_at'][:10]}\n\n"
+                message += f"🔸 {user["username"] or "غير محدد"}\n"
+                message += f"   ID: {user["telegram_id"]}\n"
+                message += f"   تاريخ التسجيل: {user["created_at"][:10]}\n\n"
                 
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"تفعيل {user['username'] or user['telegram_id']}", 
-                        callback_data=f"activate_{user['id']}"
+                        f"تفعيل {user["username"] or user["telegram_id"]}", 
+                        callback_data=f"activate_{user["id"]}"
                     )
                 ])
             
@@ -157,8 +162,8 @@ class TelegramBot:
     async def show_all_users(self, query) -> None:
         """عرض جميع المستخدمين"""
         try:
-            response = supabase.table('users').select(
-                'id, telegram_id, username, created_at, user_activations(is_active)'
+            response = supabase.table("users").select(
+                "id, telegram_id, username, created_at, user_activations(is_active)"
             ).execute()
             
             if not response.data:
@@ -170,7 +175,7 @@ class TelegramBot:
             message = "👥 جميع المستخدمين:\n\n"
             
             for user in response.data:
-                is_active = user['user_activations'][0]['is_active'] if user['user_activations'] else False
+                is_active = user["user_activations"][0]["is_active"] if user["user_activations"] else False
                 status = "✅ مفعل" if is_active else "❌ غير مفعل"
                 
                 if is_active:
@@ -178,9 +183,9 @@ class TelegramBot:
                 else:
                     inactive_count += 1
                 
-                message += f"🔸 {user['username'] or 'غير محدد'} - {status}\n"
-                message += f"   ID: {user['telegram_id']}\n"
-                message += f"   تاريخ التسجيل: {user['created_at'][:10]}\n\n"
+                message += f"🔸 {user["username"] or "غير محدد"} - {status}\n"
+                message += f"   ID: {user["telegram_id"]}\n"
+                message += f"   تاريخ التسجيل: {user["created_at"][:10]}\n\n"
             
             message += f"\n📊 الإحصائيات:\n"
             message += f"✅ المفعلين: {active_count}\n"
@@ -200,8 +205,8 @@ class TelegramBot:
         """عرض الإحصائيات"""
         try:
             # جلب إحصائيات المستخدمين
-            all_users = supabase.table('users').select('id').execute()
-            active_users = supabase.table('user_activations').select('user_id').eq('is_active', True).execute()
+            all_users = supabase.table("users").select("id").execute()
+            active_users = supabase.table("user_activations").select("user_id").eq("is_active", True).execute()
             
             total_users = len(all_users.data) if all_users.data else 0
             active_count = len(active_users.data) if active_users.data else 0
@@ -229,15 +234,15 @@ class TelegramBot:
         """تفعيل مستخدم"""
         try:
             # تحديث حالة التفعيل
-            response = supabase.table('user_activations').update({
-                'is_active': True,
-                'activated_by': str(query.from_user.id),
-                'activated_at': datetime.now().isoformat()
-            }).eq('user_id', user_id).execute()
+            response = supabase.table("user_activations").update({
+                "is_active": True,
+                "activated_by": str(query.from_user.id),
+                "activated_at": datetime.now().isoformat()
+            }).eq("user_id", user_id).execute()
             
             if response.data:
                 # جلب معلومات المستخدم للإشعار
-                user_response = supabase.table('users').select('telegram_id, username').eq('id', user_id).execute()
+                user_response = supabase.table("users").select("telegram_id, username").eq("id", user_id).execute()
                 
                 if user_response.data:
                     user_data = user_response.data[0]
@@ -245,15 +250,15 @@ class TelegramBot:
                     # إرسال إشعار للمستخدم
                     try:
                         await query.bot.send_message(
-                            chat_id=user_data['telegram_id'],
+                            chat_id=user_data["telegram_id"],
                             text="🎉 تهانينا! تم تفعيل حسابك بنجاح.\n"
                                  "يمكنك الآن الوصول إلى جميع الاختبارات."
                         )
                     except Exception as e:
-                        logger.warning(f"لم يتم إرسال الإشعار للمستخدم {user_data['telegram_id']}: {e}")
+                        logger.warning(f"لم يتم إرسال الإشعار للمستخدم {user_data["telegram_id"]}: {e}")
                     
                     await query.edit_message_text(
-                        f"✅ تم تفعيل المستخدم {user_data['username'] or user_data['telegram_id']} بنجاح!"
+                        f"✅ تم تفعيل المستخدم {user_data["username"] or user_data["telegram_id"]} بنجاح!"
                     )
                 else:
                     await query.edit_message_text("تم التفعيل لكن لم يتم العثور على بيانات المستخدم.")
@@ -267,11 +272,11 @@ class TelegramBot:
     async def deactivate_user(self, query, user_id: str) -> None:
         """إلغاء تفعيل مستخدم"""
         try:
-            response = supabase.table('user_activations').update({
-                'is_active': False,
-                'activated_by': None,
-                'activated_at': None
-            }).eq('user_id', user_id).execute()
+            response = supabase.table("user_activations").update({
+                "is_active": False,
+                "activated_by": None,
+                "activated_at": None
+            }).eq("user_id", user_id).execute()
             
             if response.data:
                 await query.edit_message_text("❌ تم إلغاء تفعيل المستخدم بنجاح!")
@@ -293,7 +298,8 @@ class TelegramBot:
         
         # تهيئة البوت
         await self.application.initialize()
-        await self.application.start()
+        # لا تقم بتشغيل start() هنا إذا كنت تستخدم webhooks
+        # await self.application.start()
         
         logger.info("تم إعداد البوت بنجاح")
 
@@ -307,18 +313,22 @@ class TelegramBot:
 bot_instance = TelegramBot()
 
 # Flask routes
-@app.route('/')
+@app.route("/")
 def health_check():
     return jsonify({"status": "Bot is running", "message": "Telegram bot is active"})
 
-@app.route('/health')
+@app.route("/health")
 def health():
     return jsonify({"status": "healthy"})
 
-@app.route('/webhook', methods=['POST'])
+@app.route("/webhook", methods=["POST"])
 def webhook():
     """معالج webhook للتليجرام"""
     try:
+        # تأكد من أن البوت مهيأ قبل معالجة التحديثات
+        if not bot_instance.application:
+            asyncio.run(bot_instance.setup_bot())
+
         update = Update.de_json(request.get_json(), bot_instance.application.bot)
         asyncio.create_task(bot_instance.application.process_update(update))
         return jsonify({"status": "ok"})
@@ -326,37 +336,50 @@ def webhook():
         logger.error(f"خطأ في webhook: {e}")
         return jsonify({"error": str(e)}), 500
 
-def run_bot():
-    """تشغيل البوت في thread منفصل"""
+def run_bot_polling():
+    """تشغيل البوت في وضع polling (للتطوير المحلي فقط)"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    async def start_bot():
+    async def start_polling():
         await bot_instance.setup_bot()
-        # Keep the bot running
         await bot_instance.application.updater.start_polling()
         await bot_instance.application.updater.idle()
     
     try:
-        loop.run_until_complete(start_bot())
+        loop.run_until_complete(start_polling())
     except Exception as e:
-        logger.error(f"خطأ في تشغيل البوت: {e}")
+        logger.error(f"خطأ في تشغيل البوت (polling): {e}")
     finally:
         loop.close()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
-        # تشغيل البوت في thread منفصل
-        bot_thread = threading.Thread(target=run_bot, daemon=True)
-        bot_thread.start()
-        
-        # تشغيل Flask server
-        port = int(os.environ.get('PORT', 5000))
-        app.run(host='0.0.0.0', port=port, debug=False)
-        
+        # في بيئة الإنتاج (مثل Render)، استخدم webhooks
+        # في بيئة التطوير المحلية، يمكنك استخدام polling
+        if os.getenv("RENDER") == "true": # افتراض أن Render يحدد هذا المتغير
+            # إعداد البوت لـ webhooks
+            asyncio.run(bot_instance.setup_bot())
+            logger.info("البوت جاهز لاستقبال webhooks.")
+            
+            # تشغيل Flask server
+            port = int(os.environ.get("PORT", 5000))
+            app.run(host="0.0.0.0", port=port, debug=False)
+        else:
+            # تشغيل البوت في thread منفصل لـ polling (للتطوير المحلي)
+            bot_thread = threading.Thread(target=run_bot_polling, daemon=True)
+            bot_thread.start()
+            
+            # تشغيل Flask server (يمكن استخدامه لـ health checks)
+            port = int(os.environ.get("PORT", 5000))
+            app.run(host="0.0.0.0", port=port, debug=True) # debug=True للتطوير
+            
     except Exception as e:
         logger.error(f"خطأ في تشغيل التطبيق: {e}")
     finally:
-        # تنظيف الموارد
-        asyncio.run(bot_instance.stop_bot())
+        # تنظيف الموارد عند الإغلاق
+        if bot_instance.application and not os.getenv("RENDER") == "true":
+            asyncio.run(bot_instance.stop_bot())
+
+
 
