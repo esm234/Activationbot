@@ -5,6 +5,9 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from supabase import create_client, Client
 from datetime import datetime
+from flask import Flask, request, jsonify
+import asyncio
+import threading
 
 # تحميل المتغيرات البيئية
 load_dotenv()
@@ -24,11 +27,15 @@ supabase: Client = create_client(supabase_url, supabase_key)
 # معرف الأدمن
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', '0'))
 
+# إعداد Flask
+app = Flask(__name__)
+
 class TelegramBot:
     def __init__(self):
         self.bot_token = os.getenv('BOT_TOKEN')
         if not self.bot_token:
             raise ValueError("BOT_TOKEN غير موجود في متغيرات البيئة")
+        self.application = None
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """معالج أمر /start"""
@@ -275,23 +282,81 @@ class TelegramBot:
             logger.error(f"خطأ في إلغاء تفعيل المستخدم: {e}")
             await query.edit_message_text("حدث خطأ أثناء إلغاء تفعيل المستخدم.")
 
-    def run(self):
-        """تشغيل البوت"""
-        application = Application.builder().token(self.bot_token).build()
+    async def setup_bot(self):
+        """إعداد البوت"""
+        self.application = Application.builder().token(self.bot_token).build()
         
         # إضافة المعالجات
-        application.add_handler(CommandHandler("start", self.start))
-        application.add_handler(CommandHandler("admin", self.admin_panel))
-        application.add_handler(CallbackQueryHandler(self.button_handler))
+        self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(CommandHandler("admin", self.admin_panel))
+        self.application.add_handler(CallbackQueryHandler(self.button_handler))
         
-        # تشغيل البوت
-        logger.info("تم بدء تشغيل البوت...")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # تهيئة البوت
+        await self.application.initialize()
+        await self.application.start()
+        
+        logger.info("تم إعداد البوت بنجاح")
+
+    async def stop_bot(self):
+        """إيقاف البوت"""
+        if self.application:
+            await self.application.stop()
+            await self.application.shutdown()
+
+# إنشاء مثيل البوت
+bot_instance = TelegramBot()
+
+# Flask routes
+@app.route('/')
+def health_check():
+    return jsonify({"status": "Bot is running", "message": "Telegram bot is active"})
+
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy"})
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """معالج webhook للتليجرام"""
+    try:
+        update = Update.de_json(request.get_json(), bot_instance.application.bot)
+        asyncio.create_task(bot_instance.application.process_update(update))
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.error(f"خطأ في webhook: {e}")
+        return jsonify({"error": str(e)}), 500
+
+def run_bot():
+    """تشغيل البوت في thread منفصل"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    async def start_bot():
+        await bot_instance.setup_bot()
+        # Keep the bot running
+        await bot_instance.application.updater.start_polling()
+        await bot_instance.application.updater.idle()
+    
+    try:
+        loop.run_until_complete(start_bot())
+    except Exception as e:
+        logger.error(f"خطأ في تشغيل البوت: {e}")
+    finally:
+        loop.close()
 
 if __name__ == '__main__':
     try:
-        bot = TelegramBot()
-        bot.run()
+        # تشغيل البوت في thread منفصل
+        bot_thread = threading.Thread(target=run_bot, daemon=True)
+        bot_thread.start()
+        
+        # تشغيل Flask server
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port, debug=False)
+        
     except Exception as e:
-        logger.error(f"خطأ في تشغيل البوت: {e}")
+        logger.error(f"خطأ في تشغيل التطبيق: {e}")
+    finally:
+        # تنظيف الموارد
+        asyncio.run(bot_instance.stop_bot())
 
